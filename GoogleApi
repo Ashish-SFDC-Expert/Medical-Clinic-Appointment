@@ -1,0 +1,201 @@
+public class GoogleApi {
+    
+    public List<Google_Calender__c> googleCred= new List<Google_Calender__c>();
+    public String authScope;
+    public String pageName ;
+    public String code {get;set;}
+    public Static Boolean isListCalendars { get; set; }
+    Public Static String allCalendars { get; set; }
+    
+    public GoogleApi(ApexPages.StandardController controller){
+        authScope = 'https://www.googleapis.com/auth/calendar';        
+        code = ApexPages.currentPage().getParameters().get('code');
+        googleCred=[SELECT id,Token_Endpoint__c,Redirect_URI__c,Prompt__c,Client_Secret__c,Client_Key__c,Endpoint__c,Access_Type__c,grant_type__c FROM Google_Calender__c];    	
+    }
+    
+	public pageReference doGetAuthorizationCode(){
+        String requestBody = '';
+          
+        if(googleCred != null && googleCred.size() > 0){
+            requestBody = googleCred[0].Endpoint__c+'?scope='+authScope+'&';
+            requestBody+= 'client_id='+googleCred[0].Client_Key__c+'&redirect_uri='+googleCred[0].Redirect_URI__c;
+            requestBody+= '&access_type='+googleCred[0].Access_Type__c+'&state=64235635373';
+            requestBody+= '&include_granted_scopes=true';
+            requestBody+= '&prompt='+googleCred[0].prompt__c+'&response_type=code';
+        }
+      
+        PageReference pageRef = new PageReference(requestBody);
+        pageRef.setRedirect(true);
+        return pageRef;
+    }
+    
+   public PageReference doGetAccessToken(){
+     
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse httpRes = new HttpResponse();
+        String errorMessage = '';
+        if(googleCred != null && googleCred.size() > 0 && code != null){
+            httpReq.setMethod('POST');
+            httpReq.setEndpoint('https://oauth2.googleapis.com/token');
+            httpReq.setHeader('Host', 'oauth2.googleapis.com');
+            httpReq.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+            httpReq.setTimeout(12000);
+            String requestBody = 'code='+code+'&client_id='+googleCred[0].Client_Key__c+'&redirect_uri='+googleCred[0].Redirect_URI__c;
+            requestBody+= '&client_secret='+googleCred[0].Client_Secret__c+'&grant_type='+googleCred[0].grant_type__c;
+            
+            httpReq.setBody(requestBody);
+            try{
+                httpRes = (new Http()).send(httpReq);
+                
+                if(httpRes.getStatusCode() == 200){
+                  
+                    String response = httpRes.getBody();
+                    Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response);
+                    List<Google_Token__c> tokenList = new List<Google_Token__c>();
+                    tokenList = [Select Id, Name, Access_Token__c, Refresh_Token__c, Expires_In_Seconds__c, Expires_In__c
+                                 from Google_Token__c Where Name='Google Product'];
+                    IF(tokenList !=null && tokenList.size() > 0){
+                        tokenList[0].Access_Token__c = (String)responseMap.get('access_token');
+                        tokenList[0].Refresh_Token__c = (String)responseMap.get('refresh_token');
+                        tokenList[0].Expires_In_Seconds__c = (Integer)responseMap.get('expires_in');
+                        DateTime dtTime = System.now().addSeconds(Integer.valueOf(tokenList[0].Expires_In_Seconds__c));
+                        tokenList[0].Expires_In__c = dtTime;
+                    }else{
+                        Google_Token__c token = new Google_Token__c();
+                        token.Name = 'Google Product';
+                        token.Access_Token__c = (String)responseMap.get('access_token');
+                        token.Refresh_Token__c = (String)responseMap.get('refresh_token');
+                        token.Expires_In_Seconds__c = (Integer)responseMap.get('expires_in');
+                        DateTime dtTime = System.now().addSeconds(Integer.valueOf(token.Expires_In_Seconds__c));
+                        token.Expires_In__c = dtTime;
+                        tokenList.add(token);
+                    }
+                    if(tokenList != null && tokenList.size() > 0){
+                        upsert tokenList;
+                        PageReference pageRef;
+                        pageRef.setRedirect(true);
+                        return pageRef;
+                    }
+                    
+                }else{
+                    errorMessage = 'Unexpected Error while communicating with Google API. '
+                        +'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode();
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR, errorMessage));
+                    return null;
+                }
+            }catch(Exception e){
+                if(String.valueOf(e.getMessage()).startsWith('Unauthorized endpoint')){
+                    errorMessage = 'Unauthorize endpoint: An Administer must go to Setup -> Administer -> Security Control ->'
+                        +' Remote Site Setting and add '+' '+ 'https://www.googleapis.com/' +' Endpoint';
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR, errorMessage));
+                    return null;
+                }else{
+                    errorMessage = 'Unexpected Error while communicating with Google API. '
+                        +'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode();
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR, errorMessage));
+                    return null;
+                }
+            }
+        }else{
+            ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR, 'No Google Settings Found OR Invalid Code!. Please check and try again.')); 
+            return null;
+        }
+        return null;
+    } 
+    
+    
+    
+    public static void doCreateNewCalendarEvent(){
+        List<Google_Token__c> tokenList = new List<Google_Token__c>();
+        tokenList = [Select Id, Name, Access_Token__c, Refresh_Token__c, Expires_In_Seconds__c, Expires_In__c
+                     from Google_Token__c Where Name='Google Product'];
+        String accessToken = tokenList[0].Access_Token__c;
+        //String accessToken = tokenList[0].Access_Token__c;
+        
+        String createEventEndPoint = 'https://www.googleapis.com/calendar/v3/calendars/aashish.thakur920@gmail.com/events?sendNotifications=true';
+        
+        String createEventBody =  '{' +
+            '"attendees": ['+
+            '{'+
+            '"email": "aashish.thakur920@gmail.com"'+ 
+            '},'+
+            '{'+
+            '"email": "aashish.thakur920@gmail.com"'+
+            '}'+
+            '],'+
+            '"attachments": ['+
+            '{'+
+            '"fileUrl": ""'+
+            '}'+
+            '],'+
+            '"end": {'+//2020-09-11T13:00:00.000+0000
+            '"dateTime": "2020-09-09T22:52:00"'+
+            '},'+
+            '"reminders": {'+
+            '"useDefault": true'+
+            '},'+
+            '"start": {'+
+            '"dateTime": "2020-09-09T21:52:00"'+
+            '},'+
+            '"summary": "This is Test Event Using Calendar API ",'+
+            '"location": "B 24 Noida Sec 65"'+
+            '}';
+        System.debug('#### createEventBody  '+createEventBody );
+        Http http = new Http();
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse HttpRes = new HttpResponse();
+        
+        httpReq.setEndpoint(createEventEndPoint);
+        httpReq.setMethod('POST');
+        httpReq.setBody(createEventBody );
+        httpReq.setHeader('Content-Type', 'application/json');
+        httpReq.setHeader('Authorization','Bearer '+accessToken);
+        try{
+            HttpRes = http.send(httpReq);
+            if(HttpRes.getStatusCode() == 200){
+                ApexPages.addmessage(new ApexPages.message(
+                    ApexPages.severity.CONFIRM,'Calendar Event Successfully  '+'\n'+' '+
+                    HttpRes.getBody()));
+            }else{
+                String errorMessage = 'Unexpected Error while communicating with Google Calendar API. '
+                    +'Status '+HttpRes.getStatus()+' and Status Code '+HttpRes.getStatuscode();
+                ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,errorMessage));
+            }
+        }catch(System.Exception e){
+            System.debug('#### Exception Executed : '+e.getMessage() + '  '+e.getStackTraceString() + ' '+e.getLineNumber());
+        }
+    }
+    
+    public static void doListAllCalendar(){
+        List<Google_Token__c> tokenList = new List<Google_Token__c>();
+        tokenList = [Select Id, Name, Access_Token__c, Refresh_Token__c, Expires_In_Seconds__c, Expires_In__c
+                     from Google_Token__c Where Name='Google Product'];
+        String accessToken = tokenList[0].Access_Token__c;
+        String endPoint = 'https://www.googleapis.com/calendar/v3/users/me/calendarList';
+        
+        Http http = new Http();
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse HttpRes = new HttpResponse();
+        
+        httpReq.setEndpoint(endpoint);
+        httpReq.setMethod('GET');
+        httpReq.setHeader('Content-Type', 'application/json');
+        httpReq.setHeader('Authorization','Bearer '+accessToken);
+        try{
+            HttpRes = http.send(httpReq);
+            if(httpRes.getStatusCode() == 200){
+                isListCalendars = true;
+                System.debug('#### HtteRes '+HttpRes.getBody());
+                allCalendars = HttpRes.getBody();
+                ApexPages.addmessage(new ApexPages.message(
+                    ApexPages.severity.CONFIRM,'Calendar List Retrieved Successfully '));
+            }else{
+                String errorMessage = 'Unexpected Error while communicating with Google Calendar API. '
+                    +'Status '+HttpRes.getStatus()+' and Status Code '+HttpRes.getStatuscode();
+                ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,errorMessage));
+            }
+        }catch(System.Exception e){
+            System.debug('#### Exception Executed '+e.getStackTraceString() +'  '+e.getMessage());
+        }
+    }
+}
