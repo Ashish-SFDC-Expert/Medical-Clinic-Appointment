@@ -1,0 +1,12 @@
+<Apex:Page Standardcontroller="user" extensions="GoogleApi">
+    <apex:form >
+    <apex:commandButton action="{!doGetAuthorizationCode}" value="Authorize with Google"
+                             
+                                rendered="{!code == null}" />
+    
+    <apex:commandButton action="{!doGetAccessToken}" value="Complete Access Token"
+                                
+                                rendered="{!code <> null}" />
+                                
+</apex:form>
+</Apex:Page>
