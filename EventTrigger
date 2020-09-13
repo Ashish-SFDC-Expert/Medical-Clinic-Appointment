@@ -1,0 +1,7 @@
+trigger EventTrigger on Event (after insert,before insert) {
+    
+    List<User> receptionProfile=[SELECT id from user WHERE profile.ID='00e2w000002btxt' AND id= : userinfo.getUserId()];
+    if(receptionProfile.size()>0){
+        TriggerFactory.createHandler(Event.sObjectType);
+    }
+}
