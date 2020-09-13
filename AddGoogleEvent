@@ -1,0 +1,64 @@
+public class AddGoogleEvent implements Itrigger{
+	
+    List<Event> eventTobeAddedOnGoogle=new List<Event>();
+    map<Event,ID> contactID=new map<Event,ID>();
+    Map<ID,user> ownerRecord=new map<Id,user>();
+    
+    public AddGoogleEvent(){}
+    public void beforeInsert(SObject so){
+      
+    }
+    public void beforeUpdate(SObject oldSo, SObject so){}
+    public void beforeDelete(SObject so){}
+    public void afterDelete(SObject so){}
+    public void afterUpdate(SObject newso, Sobject oldSo){}
+    public void afterInsert(SObject so){}
+    public void bulkBefore(){
+        
+        map<ID,String> contactToEmail=new Map<ID,String>();
+        List<ID> contactID=new List<ID>();
+        
+        for(Sobject eve :  Trigger.New){
+            Event newEvent=(Event)eve;
+            contactID.add(newEvent.whoID);
+        }
+        
+       
+        
+        for(contact con: [SELECT id,email FROM Contact WHERE id in : contactID]){
+            contactToEmail.put(con.id,con.email);
+        }
+    
+        
+        for(Sobject eve :  Trigger.New){
+            Event newEvent=(Event)eve;
+            if(contactToEmail.containsKey(newEvent.WhoId)){
+                newEvent.Contact_Email__c=contactToEmail.get(newEvent.WhoId);
+              
+            }
+        }
+        
+    }
+    public void bulkAfter(){
+        Map<ID,String> OwnerEmail=New Map<Id,String>();
+        List<ID> ownerID=new List<ID>();
+       
+        for(Sobject eve: trigger.new){
+            Event newEvent=(Event)eve;           
+            eventTobeAddedOnGoogle.add(newEvent); 
+            ownerID.add(newEvent.OwnerId);
+        }  
+        
+        for(user rec: [SELECT id,Email From User WHERE ID in :ownerID]){
+            ownerRecord.put(rec.id,rec);
+        }
+        
+         System.debug(this.ownerRecord);
+    }
+    public void andFinally(){
+     	    System.debug(this.ownerRecord);
+        BatchToAddGoogleEvent bc=new BatchToAddGoogleEvent(eventTobeAddedOnGoogle,ownerRecord);
+        database.executeBatch(bc);
+        
+    }
+}
