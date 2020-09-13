@@ -1,0 +1,83 @@
+global with Sharing class BatchToAddGoogleEvent implements Database.Batchable<sObject>,  Database.AllowsCallouts { 
+   
+    List<Event> eventTobeAddedOnGoogle=new List<Event>();
+    Map<ID,user> ownerRecord=new map<Id,user>();
+    public BatchToAddGoogleEvent(List<Event>  EventRecords,Map<ID,user> ownerRecord){
+        eventTobeAddedOnGoogle=EventRecords;
+        this.ownerRecord=ownerRecord;
+        System.debug(this.ownerRecord);
+    }
+    
+    global List<Event> start(Database.BatchableContext BC){
+        
+        return eventTobeAddedOnGoogle;
+    }
+    
+    global void execute(Database.BatchableContext BC, List<Event> scope){
+        
+        List<Google_Token__c> tokenList = new List<Google_Token__c>();
+        tokenList = [Select Id, Name, Access_Token__c, Refresh_Token__c, Expires_In_Seconds__c, Expires_In__c
+                     from Google_Token__c Where Name='Google Product'];
+        String accessToken = tokenList[0].Access_Token__c;
+        
+        List<user> receptionistLit=[SELECT Id, Email FROM User WHERE id='0052w000006oj3D']; 
+        
+        for(Event sc : scope){
+            String createEventEndPoint = 'https://www.googleapis.com/calendar/v3/calendars/'+receptionistLit[0].email+'/events?sendNotifications=true';
+                        
+            user userRec=ownerRecord.get(sc.OwnerId);
+          	String StartDate = sc.StartDateTime.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+            String EndDate  = sc.EndDateTime.formatGMT('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+            String createEventBody =  '{' +
+                '"attendees": ['+
+                '{'+
+                '"email": "'+userRec.email+'"'+ 
+                '},'+
+                '{'+
+                '"email": "'+sc.Contact_Email__c+'"'+
+                '}'+
+                '],'+
+                '"attachments": ['+
+                '{'+
+                '"fileUrl": ""'+
+                '}'+
+                '],'+
+                '"end": {'+
+                '"dateTime": "'+EndDate+'"'+
+                '},'+
+                '"reminders": {'+
+                '"useDefault": true'+
+                '},'+
+                '"start": {'+
+                '"dateTime": "'+StartDate+'"'+
+                '},'+
+                '"summary": "'+sc.Description+'",'+
+                '"location": "Medical Clinic Appointment"'+
+                '}';
+            
+            Http http = new Http();
+            HttpRequest httpReq = new HttpRequest();
+            HttpResponse HttpRes = new HttpResponse();
+            
+            httpReq.setEndpoint(createEventEndPoint);
+            httpReq.setMethod('POST');
+            httpReq.setBody(createEventBody );
+            httpReq.setHeader('Content-Type', 'application/json');
+            httpReq.setHeader('Authorization','Bearer '+accessToken);
+            try{
+                HttpRes = http.send(httpReq);
+                if(HttpRes.getStatusCode() == 200){
+                   
+                }else{
+                    String errorMessage = 'Unexpected Error while communicating with Google Calendar API. '
+                        +'Status '+HttpRes.getStatus()+' and Status Code '+HttpRes.getStatuscode();
+                   
+                }
+            }catch(System.Exception e){
+                System.debug('#### Exception Executed : '+e.getMessage() + '  '+e.getStackTraceString() + ' '+e.getLineNumber());
+            }
+        }
+    }
+    
+    global void finish(Database.BatchableContext BC){}
+}
