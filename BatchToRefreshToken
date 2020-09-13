@@ -1,0 +1,70 @@
+global with Sharing class BatchToRefreshToken implements Database.Batchable<sObject>,  Database.AllowsCallouts,schedulable  {
+    
+    global void execute(SchedulableContext SC) {
+        database.executebatch(new BatchToRefreshToken());
+    }
+	    
+    global List<Google_Calender__c> start(Database.BatchableContext BC){
+        
+        return [SELECT id,Token_Endpoint__c,Redirect_URI__c,Prompt__c,Client_Secret__c,Client_Key__c,Endpoint__c,Access_Type__c,grant_type__c FROM Google_Calender__c];
+    }
+    
+    global void execute(Database.BatchableContext BC, List<Google_Calender__c> scope){
+        
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse httpRes = new HttpResponse();
+        String errorMessage = '';
+        List<Google_Calender__c> googleCred = scope;
+        List<Google_Token__c> tokenList = new List<Google_Token__c>();
+        tokenList = [Select Id, Name, Access_Token__c, Refresh_Token__c, Expires_In_Seconds__c, Expires_In__c from Google_Token__c Where Name='Google Product'];
+        if(googleCred != null && googleCred.size() > 0 && tokenList.size() > 0){
+            httpReq.setMethod('POST');
+            httpReq.setEndpoint(googleCred[0].Token_EndPoint__c);
+            httpReq.setHeader('Host', 'www.googleapis.com');
+            httpReq.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+            httpReq.setTimeout(12000);
+            String requestBody = 'refresh_token='+tokenList[0].Refresh_Token__c+'&client_id='+googleCred[0].Client_Key__c+'&client_secret='+googleCred[0].Client_Secret__c;
+            requestBody+= '&grant_type=refresh_token';
+            
+            httpReq.setBody(requestBody);
+            try{
+                httpRes = (new Http()).send(httpReq);
+                if(httpRes.getStatusCode() == 200){
+                    String response = httpRes.getBody();
+                    Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response);
+                    
+                    IF(tokenList !=null && tokenList.size() > 0){
+                        tokenList[0].Access_Token__c = (String)responseMap.get('access_token');
+                        //tokenList[0].Refresh_Token__c = (String)responseMap.get('refresh_token');
+                        tokenList[0].Expires_In_Seconds__c = (Integer)responseMap.get('expires_in');
+                        DateTime dtTime = System.now().addSeconds(Integer.valueOf(tokenList[0].Expires_In_Seconds__c));
+                        tokenList[0].Expires_In__c = dtTime;
+                    }
+                    if(tokenList != null && tokenList.size() > 0){
+                        update tokenList;
+                        System.debug('hi');
+                    }
+                    
+                }else{
+                    errorMessage = 'Unexpected Error while communicating with Google API. '
+                        +'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode();
+                }
+            }catch(Exception e){
+                if(String.valueOf(e.getMessage()).startsWith('Unauthorized endpoint')){
+                    errorMessage = 'Unauthorize endpoint: An Administer must go to Setup -> Administer -> Security Control ->'
+                        +' Remote Site Setting and add '+' '+ 'https://www.googleapis.com/' +' Endpoint';
+                }else{
+                    errorMessage = 'Unexpected Error while communicating with Google API. '
+                        +'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode();
+                }
+            }
+        }
+    }
+    
+    global void finish(Database.BatchableContext BC){}
+    
+    global static void start(){
+        //System.schedule('BatchToRefreshToken', '0 0 * * * ?', new BatchToRefreshToken());
+        
+    }
+}
